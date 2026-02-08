@@ -21,8 +21,9 @@ pip install -r requirements.txt
 # Настроить .env (токен бота, ID админа, пароль)
 nano .env
 
-# Создать БД при первом запуске
+# Создать БД и заполнить подразделы (4.1, 4.2, 4.3 — названия пунктов)
 python3 -c "from database import create_tables; create_tables()"
+python3 seed_subsections.py
 
 # Запуск
 python3 main.py
