@@ -29,35 +29,23 @@ python3 seed_subsections.py
 python3 main.py
 ```
 
-## Запуск в фоне (screen или systemd)
+## Автозапуск (systemd) — бот всегда работает
 
-**Через screen:**
+На VPS после установки проекта:
+
 ```bash
-screen -S bot
-source venv/bin/activate
-python3 main.py
-# Ctrl+A, D — отключиться; screen -r bot — вернуться
+cd ~/sneznau0-tgBOT
+# Подключить юнит (путь к проекту — /root/sneznau0-tgBOT)
+sudo cp an26bot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable an26bot
+sudo systemctl start an26bot
+sudo systemctl status an26bot
 ```
 
-**Через systemd** — создать `/etc/systemd/system/an26bot.service`:
-```ini
-[Unit]
-Description=AN-26 Telegram Bot
-After=network.target
+Дальше бот:
+- стартует при загрузке сервера;
+- перезапускается при падении (Restart=always, через 5 сек);
+- логи: `journalctl -u an26bot -f`
 
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/root/sneznau0-tgBOT
-ExecStart=/root/sneznau0-tgBOT/venv/bin/python3 main.py
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-```bash
-systemctl daemon-reload
-systemctl enable an26bot
-systemctl start an26bot
-systemctl status an26bot
-```
+Если проект лежит не в `/root/sneznau0-tgBOT`, отредактируй пути в `an26bot.service` (WorkingDirectory и ExecStart) или создай юнит вручную с нужным путём.

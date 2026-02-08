@@ -1,0 +1,17 @@
+[Unit]
+Description=AN-26 Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/sneznau0-tgBOT
+ExecStart=/root/sneznau0-tgBOT/venv/bin/python3 main.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
