@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
-from config import BOT_TOKEN, ADMIN_ID
+from config import BOT_TOKEN
 from database import create_tables, get_all_sections, create_connection
 from navigation import router as navigation_router
 from admin import router as admin_router

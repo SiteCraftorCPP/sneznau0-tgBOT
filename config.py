@@ -5,7 +5,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
+# Несколько админов через запятую: ADMIN_IDS=123,456,789
+_raw_ids = os.getenv("ADMIN_IDS", os.getenv("ADMIN_ID", ""))
+ADMIN_IDS = {int(x.strip()) for x in _raw_ids.split(",") if x.strip()}
+ADMIN_ID = next(iter(ADMIN_IDS), 0)  # первый, для совместимости
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
 # Пути

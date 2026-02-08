@@ -4,7 +4,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
-from config import ADMIN_ID, ADMIN_PASSWORD, BASE_DIR
+from config import ADMIN_IDS, ADMIN_PASSWORD, BASE_DIR
 from database import create_connection, get_all_sections
 
 router = Router()
@@ -110,7 +110,7 @@ async def rename_sub_save(message: types.Message, state: FSMContext):
 # === РЕДАКТИРОВАНИЕ ТЕКСТА ПОДРАЗДЕЛА ===
 @router.callback_query(F.data.startswith("edit_sub_text_"))
 async def edit_sub_text_start(callback: types.CallbackQuery, state: FSMContext):
-    if callback.from_user.id != ADMIN_ID:
+    if callback.from_user.id not in ADMIN_IDS:
         await callback.answer()
         return
     sub_id = int(callback.data.split("_")[3])
@@ -150,10 +150,7 @@ async def subsection_edit_text_save(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("quick_add_sub_"))
 async def quick_add_sub_start(callback: types.CallbackQuery, state: FSMContext):
-    # Проверка на админа (на всякий случай, хоть кнопка и скрыта)
-    # Импортируем тут, чтобы избежать циклических импортов если config нужен
-    from config import ADMIN_ID
-    if callback.from_user.id != ADMIN_ID:
+    if callback.from_user.id not in ADMIN_IDS:
         return
     
     section_id = int(callback.data.split("_")[3])
@@ -199,7 +196,7 @@ async def show_main_admin_menu(message: types.Message):
 
 @router.message(F.text == "🔙 ВЫЙТИ ИЗ АДМИНКИ")
 async def admin_exit(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     await state.clear()
     await message.answer("Вы вышли из режима администратора.", reply_markup=types.ReplyKeyboardRemove())
