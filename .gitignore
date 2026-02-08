@@ -1,0 +1,30 @@
+# Секреты
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
+
+# БД и данные (на VPS создаются заново)
+data/*.db
+data/pdf_uploads/
+data/pdf_cache/
+data/logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Логи и временные
+*.log
+*.tmp
+.DS_Store
