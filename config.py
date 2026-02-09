@@ -2,7 +2,9 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Явно грузим .env из папки бота (на VPS при запуске из другого каталога иначе не подхватится)
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 # Несколько админов через запятую: ADMIN_IDS=123,456,789
@@ -12,7 +14,6 @@ ADMIN_ID = next(iter(ADMIN_IDS), 0)  # первый, для совместимо
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
 # Пути
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE_PATH = os.path.join(BASE_DIR, "data", "an26.db")
 
 # Настройки поиска (макс. результатов в быстром поиске)

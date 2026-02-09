@@ -1,10 +1,9 @@
-import os
 from aiogram import Router, types, F
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, FSInputFile
-from config import ADMIN_IDS, ADMIN_PASSWORD, BASE_DIR
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from config import ADMIN_IDS, ADMIN_PASSWORD
 from database import create_connection, get_all_sections
 
 router = Router()
@@ -172,6 +171,13 @@ async def quick_add_sub_start(callback: types.CallbackQuery, state: FSMContext):
 
 @router.message(Command("admin"))
 async def cmd_admin(message: types.Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer(
+            f"Нет доступа. Ваш Telegram ID: `{message.from_user.id}`. "
+            "Добавьте его в .env на сервере: ADMIN_IDS=ваш_id",
+            parse_mode="Markdown"
+        )
+        return
     await message.answer("Введите пароль администратора:")
     await state.set_state(AdminStates.waiting_for_password)
 
@@ -194,12 +200,6 @@ async def show_main_admin_menu(message: types.Message):
     keyboard = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
     await message.answer("Меню:", reply_markup=keyboard)
 
-    # Прикрепляем PDF с альбомом, если он лежит в папке проекта
-    pdf_path = os.path.join(BASE_DIR, "samolet_an26b_albom_fidernykh_skhem.pdf")
-    if os.path.exists(pdf_path):
-        doc = FSInputFile(pdf_path)
-        await message.answer_document(doc, caption="Альбом фидерных схем AN-26Б")
-
 @router.message(F.text == "🔙 ВЫЙТИ ИЗ АДМИНКИ")
 async def admin_exit(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
@@ -209,29 +209,34 @@ async def admin_exit(message: types.Message, state: FSMContext):
 
 # === УРОВЕНЬ 1: ВЫБОР РАЗДЕЛА -> СПИСОК ПОДРАЗДЕЛОВ ===
 
-@router.message(AdminStates.section_selection)
-async def process_section_click(message: types.Message, state: FSMContext):
-    text = message.text
-    # Пытаемся извлечь код (4.1, 4.2...)
-    if "." not in text:
-        return
+async def _do_section_click(message: types.Message, state: FSMContext, text: str):
+    if "." not in text or text.count(".") < 2:
+        return False
     code = text.split(".")[0] + "." + text.split(".")[1]
-    
     conn = create_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id, name FROM sections WHERE code LIKE ?", (f"{code}%",))
     res = cursor.fetchone()
     conn.close()
-    
     if not res:
         await message.answer("Раздел не найден.")
-        return
-        
+        return True
     section_id, section_name = res
     await state.update_data(current_section_id=section_id, current_section_name=section_name)
-    
     await show_subsections_editor(message, section_id, section_name)
     await state.set_state(AdminStates.subsection_management)
+    return True
+
+@router.message(AdminStates.section_selection)
+async def process_section_click(message: types.Message, state: FSMContext):
+    await _do_section_click(message, state, message.text)
+
+# Запасной обработчик: админ нажал 4.1/4.2/4.3, но state потерялся (перезапуск VPS и т.п.)
+@router.message(~StateFilter(AdminStates.section_selection), F.text.startswith(("4.1.", "4.2.", "4.3.")))
+async def process_section_click_fallback(message: types.Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    await _do_section_click(message, state, message.text)
 
 async def show_subsections_editor(message: types.Message, section_id, section_name):
     conn = create_connection()

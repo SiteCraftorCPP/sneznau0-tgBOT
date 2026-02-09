@@ -14,6 +14,9 @@ class SearchStates(StatesGroup):
 
 async def show_section_subsections(message: types.Message, section_code: str):
     conn = create_connection()
+    if not conn:
+        await message.answer("Ошибка подключения к базе данных.")
+        return
     cursor = conn.cursor()
     cursor.execute("SELECT id, name FROM sections WHERE code = ?", (section_code,))
     section = cursor.fetchone()
