@@ -3,7 +3,7 @@ from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, FSInputFile
 from config import ADMIN_IDS, ADMIN_PASSWORD, BASE_DIR
 from database import create_connection, get_all_sections
 
@@ -193,6 +193,12 @@ async def show_main_admin_menu(message: types.Message):
     
     keyboard = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
     await message.answer("Меню:", reply_markup=keyboard)
+
+    # Прикрепляем PDF с альбомом, если он лежит в папке проекта
+    pdf_path = os.path.join(BASE_DIR, "samolet_an26b_albom_fidernykh_skhem.pdf")
+    if os.path.exists(pdf_path):
+        doc = FSInputFile(pdf_path)
+        await message.answer_document(doc, caption="Альбом фидерных схем AN-26Б")
 
 @router.message(F.text == "🔙 ВЫЙТИ ИЗ АДМИНКИ")
 async def admin_exit(message: types.Message, state: FSMContext):
