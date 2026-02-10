@@ -15,6 +15,7 @@ class AdminStates(StatesGroup):
     add_subsection = State()
     edit_subsection_name = State()
     subsection_edit_text = State()  # ожидание текста для подраздела
+    add_section = State()  # ввод названия и кода нового раздела
 
 # === ОБРАБОТЧИКИ АДМИНСКИХ ДЕЙСТВИЙ ИЗ MAIN.PY ===
 
@@ -173,9 +174,9 @@ async def quick_add_sub_start(callback: types.CallbackQuery, state: FSMContext):
 async def cmd_admin(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         await message.answer(
-            f"Нет доступа. Ваш Telegram ID: `{message.from_user.id}`. "
-            "Добавьте его в .env на сервере: ADMIN_IDS=ваш_id",
-            parse_mode="Markdown"
+            f"Нет доступа. Ваш Telegram ID: {message.from_user.id}\n\n"
+            f"В .env на сервере добавьте строку:\n"
+            f"ADMIN_IDS={message.from_user.id}"
         )
         return
     await message.answer("Введите пароль администратора:")
@@ -187,18 +188,63 @@ async def process_password(message: types.Message, state: FSMContext):
         await show_main_admin_menu(message)
         await state.set_state(AdminStates.section_selection)
     else:
-        await message.answer("❌ Неверный пароль.")
+        await message.answer("❌ Неверный пароль администратора.")
+        await state.clear()
 
 async def show_main_admin_menu(message: types.Message):
-    # Показываем те же кнопки, что и в главном меню, но для админа
     sections = get_all_sections()
     kb = []
     for name, code in sections:
         kb.append([KeyboardButton(text=f"{code}. {name}")])
+    kb.append([KeyboardButton(text="➕ ДОБАВИТЬ РАЗДЕЛ")])
     kb.append([KeyboardButton(text="🔙 ВЫЙТИ ИЗ АДМИНКИ")])
     
     keyboard = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
     await message.answer("Меню:", reply_markup=keyboard)
+
+@router.message(AdminStates.section_selection, F.text == "➕ ДОБАВИТЬ РАЗДЕЛ")
+async def add_section_start(message: types.Message, state: FSMContext):
+    await message.answer("Введите название раздела:")
+    await state.set_state(AdminStates.add_section)
+
+@router.message(AdminStates.add_section, F.text)
+async def add_section_finish(message: types.Message, state: FSMContext):
+    name = (message.text or "").strip()
+    if not name:
+        await message.answer("Название не должно быть пустым.")
+        return
+    conn = create_connection()
+    if not conn:
+        await message.answer("Ошибка БД.")
+        await state.set_state(AdminStates.section_selection)
+        return
+    cursor = conn.cursor()
+    # Автоматически подбираем следующий свободный код (по аналогии 4.1, 4.2, 4.3 -> 4.4 и т.д.)
+    cursor.execute("SELECT code FROM sections")
+    rows = cursor.fetchall()
+    next_code = "4.1"
+    nums = []
+    for (c,) in rows:
+        parts = str(c).split(".")
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            nums.append((int(parts[0]), int(parts[1])))
+    if nums:
+        nums.sort()
+        major, minor = nums[-1]
+        major_new, minor_new = major, minor + 1
+        candidate = f"{major_new}.{minor_new}"
+        # вдруг такой код уже есть (на всякий случай крутим дальше)
+        existing = {c for (c,) in rows}
+        while candidate in existing:
+            minor_new += 1
+            candidate = f"{major_new}.{minor_new}"
+        next_code = candidate
+    cursor.execute("INSERT INTO sections (name, code) VALUES (?, ?)", (name, next_code))
+    conn.commit()
+    conn.close()
+    await message.answer(f"✅ Раздел «{name}» (код {next_code}) добавлен. Он появился в меню.")
+    await state.set_state(AdminStates.section_selection)
+    await show_main_admin_menu(message)
 
 @router.message(F.text == "🔙 ВЫЙТИ ИЗ АДМИНКИ")
 async def admin_exit(message: types.Message, state: FSMContext):
@@ -215,24 +261,34 @@ async def _do_section_click(message: types.Message, state: FSMContext, text: str
     code = text.split(".")[0] + "." + text.split(".")[1]
     conn = create_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name FROM sections WHERE code LIKE ?", (f"{code}%",))
+    cursor.execute("SELECT id, name, code FROM sections WHERE code LIKE ?", (f"{code}%",))
     res = cursor.fetchone()
     conn.close()
     if not res:
         await message.answer("Раздел не найден.")
         return True
-    section_id, section_name = res
+    section_id, section_name, section_code = res[0], res[1], str(res[2])
     await state.update_data(current_section_id=section_id, current_section_name=section_name)
-    await show_subsections_editor(message, section_id, section_name)
-    await state.set_state(AdminStates.subsection_management)
+    # По аналогии с подразделами: сначала экран выбора действия (Подразделы / Удалить раздел для добавленных)
+    can_delete = section_code not in ("4.1", "4.2", "4.3")
+    kb = [[InlineKeyboardButton(text="📂 Подразделы", callback_data=f"open_subs_{section_id}")]]
+    if can_delete:
+        kb.append([InlineKeyboardButton(text="🗑 Удалить раздел", callback_data=f"delete_section_{section_id}")])
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="close_admin_msg")])
+    await message.answer(
+        f"**{section_name}**",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+        parse_mode="Markdown"
+    )
+    await state.set_state(AdminStates.section_selection)  # остаёмся в выборе раздела, подразделы откроются по callback
     return True
 
 @router.message(AdminStates.section_selection)
 async def process_section_click(message: types.Message, state: FSMContext):
     await _do_section_click(message, state, message.text)
 
-# Запасной обработчик: админ нажал 4.1/4.2/4.3, но state потерялся (перезапуск VPS и т.п.)
-@router.message(~StateFilter(AdminStates.section_selection), F.text.startswith(("4.1.", "4.2.", "4.3.")))
+# Запасной обработчик: админ нажал раздел (4.1., 4.2., 4.4. и т.д.), но state потерялся
+@router.message(~StateFilter(AdminStates.section_selection), F.text.regexp(r"^\d+\.\d+\."))
 async def process_section_click_fallback(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         return
@@ -255,8 +311,7 @@ async def show_subsections_editor(message: types.Message, section_id, section_na
     
     # Кнопка добавления
     kb.append([InlineKeyboardButton(text="➕ ДОБАВИТЬ ПОДРАЗДЕЛ", callback_data="add_new_sub")])
-    
-    # Кнопка Назад (закрывает сообщение, так как разделы в нижнем меню)
+    # Кнопка Назад (без "УДАЛИТЬ РАЗДЕЛ" здесь — удаление в предыдущем шаге по аналогии)
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="close_admin_msg")])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=kb)
@@ -265,6 +320,34 @@ async def show_subsections_editor(message: types.Message, section_id, section_na
 @router.callback_query(F.data == "close_admin_msg")
 async def close_admin_msg(callback: types.CallbackQuery):
     await callback.message.delete()
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("open_subs_"))
+async def open_subsections(callback: types.CallbackQuery, state: FSMContext):
+    """Открыть список подразделов раздела (кнопка «Подразделы» на промежуточном экране)."""
+    section_id = int(callback.data.split("_")[2])
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sections WHERE id = ?", (section_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        await callback.answer("Раздел не найден", show_alert=True)
+        return
+    section_name = row[0]
+    await state.update_data(current_section_id=section_id, current_section_name=section_name)
+    await state.set_state(AdminStates.subsection_management)
+    # Показать список подразделов в том же сообщении
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name FROM subsections WHERE section_id = ?", (section_id,))
+    subs = cursor.fetchall()
+    conn.close()
+    text = f"**{section_name}**"
+    kb = [[InlineKeyboardButton(text=f"📂 {name}", callback_data=f"manage_sub_{s_id}")] for s_id, name in subs]
+    kb.append([InlineKeyboardButton(text="➕ ДОБАВИТЬ ПОДРАЗДЕЛ", callback_data="add_new_sub")])
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="close_admin_msg")])
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
     await callback.answer()
 
 # === УРОВЕНЬ 2: УПРАВЛЕНИЕ ПОДРАЗДЕЛАМИ ===
@@ -290,27 +373,72 @@ async def add_sub_finish(message: types.Message, state: FSMContext):
     await show_subsections_editor(message, data['current_section_id'], data['current_section_name'])
     await state.set_state(AdminStates.subsection_management)
 
-@router.callback_query(AdminStates.subsection_management, F.data.startswith("manage_sub_"))
-async def manage_subsection_options(callback: types.CallbackQuery, state: FSMContext):
-    sub_id = int(callback.data.split("_")[2])
-    
+@router.callback_query(F.data.startswith("delete_section_"))
+async def delete_section(callback: types.CallbackQuery, state: FSMContext):
+    """Удаление раздела, созданного админом (кроме 4.1, 4.2, 4.3)."""
+    section_id = int(callback.data.split("_")[2])
+
     conn = create_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT name FROM subsections WHERE id = ?", (sub_id,))
-    sub_name = cursor.fetchone()[0]
+    cursor.execute("SELECT code, name FROM sections WHERE id = ?", (section_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        await callback.answer("Раздел не найден", show_alert=True)
+        return
+    code, name = str(row[0]), row[1]
+    if code in ("4.1", "4.2", "4.3"):
+        conn.close()
+        await callback.answer("Этот раздел удалять нельзя", show_alert=True)
+        return
+
+    # Удаляем всё, что подвязано к разделу (subsections, malfunctions, steps)
+    cursor.execute("SELECT id FROM subsections WHERE section_id = ?", (section_id,))
+    sub_ids = [r[0] for r in cursor.fetchall()]
+    if sub_ids:
+        q_marks = ",".join(["?"] * len(sub_ids))
+        cursor.execute(f"DELETE FROM steps WHERE malfunction_id IN (SELECT id FROM malfunctions WHERE subsection_id IN ({q_marks}))", sub_ids)
+        cursor.execute(f"DELETE FROM malfunctions WHERE subsection_id IN ({q_marks})", sub_ids)
+        cursor.execute("DELETE FROM subsections WHERE section_id = ?", (section_id,))
+    # На всякий случай удалим и по section_id
+    cursor.execute("DELETE FROM malfunctions WHERE section_id = ?", (section_id,))
+    cursor.execute("DELETE FROM sections WHERE id = ?", (section_id,))
+    conn.commit()
     conn.close()
-    
-    await state.update_data(current_sub_id=sub_id, current_sub_name=sub_name)
-    
+
+    await callback.answer(f"Раздел «{name}» удалён", show_alert=True)
+    await callback.message.delete()
+    await state.set_state(AdminStates.section_selection)
+    await show_main_admin_menu(callback.message)
+
+async def _show_subsection_menu(callback: types.CallbackQuery, state: FSMContext, sub_id: int):
+    """Показать меню подраздела (редактировать/переименовать/удалить)."""
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, section_id FROM subsections WHERE id = ?", (sub_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        await callback.answer("Подраздел не найден", show_alert=True)
+        return
+    sub_name, section_id = row[0], row[1]
+    cursor.execute("SELECT name FROM sections WHERE id = ?", (section_id,))
+    section_name = cursor.fetchone()[0]
+    conn.close()
+    await state.update_data(current_sub_id=sub_id, current_sub_name=sub_name, current_section_id=section_id, current_section_name=section_name)
+    await state.set_state(AdminStates.subsection_management)
     text = f"📂 **{sub_name}**"
-    conn = create_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT section_id FROM subsections WHERE id = ?", (sub_id,))
-    section_id = cursor.fetchone()[0]
-    conn.close()
     kb = _subsection_menu_kb(sub_id, section_id)
     kb[-1] = [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_subs_list")]
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
+
+@router.callback_query(F.data.startswith("manage_sub_"))
+async def manage_subsection_options(callback: types.CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    sub_id = int(callback.data.split("_")[2])
+    await _show_subsection_menu(callback, state, sub_id)
+    await callback.answer()
 
 @router.callback_query(AdminStates.subsection_management, F.data == "back_to_subs_list")
 async def back_to_subs_list(callback: types.CallbackQuery, state: FSMContext):

@@ -1,12 +1,18 @@
 from aiogram import Router, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from aiogram.filters import StateFilter
+from aiogram.filters import StateFilter, BaseFilter
 from aiogram.fsm.state import State, StatesGroup
-from database import create_connection
+from database import create_connection, get_all_sections
 from search import search_subsections
 
 router = Router()
+
+
+class SectionButtonFilter(BaseFilter):
+    """Сообщение — нажатие кнопки раздела (есть код раздела из БД)."""
+    async def __call__(self, message: types.Message) -> bool:
+        return _is_section_button(message.text) is not None
 
 
 class SearchStates(StatesGroup):
@@ -83,20 +89,22 @@ async def quick_search_run(message: types.Message, state: FSMContext):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
     )
 
-@router.message(F.text.contains("4.1"), StateFilter("*"))
-async def section_electro(message: types.Message, state: FSMContext):
-    await state.clear()
-    await show_section_subsections(message, "4.1")
+def _is_section_button(text: str) -> str | None:
+    """Возвращает code раздела, если текст похож на кнопку раздела, иначе None."""
+    if not text:
+        return None
+    text = text.strip()
+    for name, code in get_all_sections():
+        if f" {code}." in text or text.startswith(code + "."):
+            return code
+    return None
 
-@router.message(F.text.contains("4.2"), StateFilter("*"))
-async def section_pribor(message: types.Message, state: FSMContext):
+@router.message(SectionButtonFilter(), StateFilter("*"))
+async def section_any(message: types.Message, state: FSMContext):
+    """Любой раздел из БД (4.1, 4.2, 4.4 …) — по коду в тексте кнопки."""
+    code = _is_section_button(message.text)
     await state.clear()
-    await show_section_subsections(message, "4.2")
-
-@router.message(F.text.contains("4.3"), StateFilter("*"))
-async def section_radio(message: types.Message, state: FSMContext):
-    await state.clear()
-    await show_section_subsections(message, "4.3")
+    await show_section_subsections(message, code)
 
 @router.callback_query(F.data.startswith("sub_click_"))
 async def process_sub_click(callback: CallbackQuery):

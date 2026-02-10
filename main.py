@@ -24,8 +24,6 @@ def get_main_keyboard():
         button_text = f"{icon} {code}. {name.upper()}"
         kb.append([KeyboardButton(text=button_text)])
     kb.append([KeyboardButton(text="🔍 БЫСТРЫЙ ПОИСК")])
-    kb.append([KeyboardButton(text="💡 ПРЕДЛОЖИТЬ НЕИСПРАВНОСТЬ")])
-    kb.append([KeyboardButton(text="❓ ПОМОЩЬ")])
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 @dp.message(Command("start"))
