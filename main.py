@@ -1,13 +1,18 @@
 import asyncio
 from aiogram import Bot, Dispatcher, types, F
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from config import BOT_TOKEN
+from config import BOT_TOKEN, get_telegram_proxy_url
 from database import create_tables, get_all_sections
 from navigation import router as navigation_router
 from admin import router as admin_router
 
-bot = Bot(token=BOT_TOKEN)
+proxy_url = get_telegram_proxy_url()
+if proxy_url:
+    bot = Bot(token=BOT_TOKEN, session=AiohttpSession(proxy=proxy_url))
+else:
+    bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 dp.include_router(admin_router)
