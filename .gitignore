@@ -12,8 +12,9 @@ venv/
 .venv/
 env/
 
-# БД и данные (на VPS создаются заново)
+# БД и данные
 data/*.db
+!data/an26.db
 data/pdf_uploads/
 data/pdf_cache/
 data/logs/
